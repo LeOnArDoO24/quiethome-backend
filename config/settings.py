@@ -179,3 +179,7 @@ if DATABASE_URL:
 #devo hardcodare un url per poter usare il db di railways
 
 ALLOWED_HOSTS = ['quiethome-backend-production.up.railway.app', 'localhost', '127.0.0.1']
+
+#config deploy
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
