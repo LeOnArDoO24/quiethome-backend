@@ -27,11 +27,12 @@ class User(AbstractUser, BaseModel):
     email = models.EmailField(unique=True)
     
     # Ruolo utente, default guest — chiunque parte come ospite
-    ROLE_CHOICES = [
-        ('guest', 'Guest'),
-        ('host', 'Host'),
-    ]
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='guest')
+    # ROLE_CHOICES = [
+    #     ('guest', 'Guest'),
+    #     ('host', 'Host'),
+    # ]
+    # role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='guest')
+    is_host = models.BooleanField(default=False)
     
     # L'utente nasce inattivo finché non verifica l'OTP
     is_active = models.BooleanField(default=False)

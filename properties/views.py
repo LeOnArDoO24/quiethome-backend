@@ -2,10 +2,15 @@ from rest_framework import viewsets, mixins, permissions as drf_permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
-from rest_framework.pagination import PageNumberPagination #paginazione degli appartamenti
+from rest_framework.pagination import PageNumberPagination
 from http import HTTPStatus
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
 from bookings.models import Booking
+import googlemaps
 
 from core.permissions import IsHost, IsOwner
 from .models import Property, Room, RoomImage, Amenity
@@ -14,6 +19,7 @@ from .serializers import ( PropertySerializer, PropertyCreateSerializer, RoomSer
 
 class PropertyPagination(PageNumberPagination):
     page_size = 10
+
 
 class AmenityViewSet(
     mixins.ListModelMixin,
@@ -62,25 +68,98 @@ class PropertyViewSet(
         return [drf_permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
-        # Associamo automaticamente l'host alla property
-        # L'utente autenticato diventa il proprietario
-        serializer.save(host=self.request.user)
+        # Recuperiamo indirizzo, città e paese per costruire la stringa da geocodificare
+        address = serializer.validated_data.get('address', '')
+        city = serializer.validated_data.get('city', '')
+        country = serializer.validated_data.get('country', '')
+
+        # Costruiamo l'indirizzo completo da mandare a Google Maps
+        full_address = f"{address}, {city}, {country}"
+
+        latitude = None
+        longitude = None
+
+        try:
+            # Inizializziamo il client Google Maps con la chiave definita in settings.py
+            gmaps = googlemaps.Client(key=settings.GOOGLE_MAPS_API_KEY)
+
+            # Chiamiamo la Geocoding API con l'indirizzo completo
+            result = gmaps.geocode(full_address)
+
+            if result:
+                # Estraiamo lat/long dal primo risultato restituito da Google
+                location = result[0]['geometry']['location']
+                latitude = location['lat']
+                longitude = location['lng']
+                print(f"Geocoding riuscito: {full_address} → {latitude}, {longitude}")
+            else:
+                # Nessun risultato trovato — salviamo senza coordinate
+                print(f"Geocoding: nessun risultato per {full_address}")
+        except Exception as e:
+            # Se il geocoding fallisce per qualsiasi motivo (es. chiave non valida,
+            # rete assente) salviamo comunque la property senza coordinate
+            print(f"Geocoding error: {e}")
+
+        # Associamo automaticamente l'host alla property e salviamo le coordinate
+        serializer.save(
+            host=self.request.user,
+            latitude=latitude,
+            longitude=longitude
+        )
 
     def get_queryset(self):
         queryset = Property.objects.prefetch_related(
             'rooms',
             'rooms__images',
             'rooms__amenities'
-        ).select_related('host') 
-        #CAMBIATO QUI AL POSTO DI Property.all...
+        ).select_related('host')
+
+        # Filtro per città — GET /properties/?city=Roma
         city = self.request.query_params.get('city')
         if city:
             queryset = queryset.filter(city__icontains=city)
-        # Filtro opzionale per country — GET /properties/?country=Italia
+
+        # Filtro per paese — GET /properties/?country=Italia
         country = self.request.query_params.get('country')
         if country:
             queryset = queryset.filter(country__icontains=country)
+
+        # Filtro per nome property — GET /properties/?name=Villa
+        name = self.request.query_params.get('name')
+        if name:
+            queryset = queryset.filter(name__icontains=name)
+
+        # Filtro per numero ospiti — GET /properties/?guests=2
+        # Mostra solo properties che hanno almeno una stanza con max_guests >= guests
+        guests = self.request.query_params.get('guests')
+        if guests:
+            try:
+                guests = int(guests)
+                queryset = queryset.filter(rooms__max_guests__gte=guests).distinct()
+            except ValueError:
+                pass
+
+        # Filtro per date disponibili — GET /properties/?check_in=2026-07-01&check_out=2026-07-10
+        # Mostra solo properties che hanno almeno una stanza libera in quel periodo
+        check_in = self.request.query_params.get('check_in')
+        check_out = self.request.query_params.get('check_out')
+        if check_in and check_out:
+            # Troviamo le stanze già prenotate in quel periodo
+            booked_rooms = Booking.objects.filter(
+                status__in=['pending', 'confirmed'],
+                check_in__lt=check_out,
+                check_out__gt=check_in
+            ).values_list('room_id', flat=True)
+
+            # Escludiamo le properties che non hanno stanze libere
+            queryset = queryset.filter(
+                rooms__is_available=True
+            ).exclude(
+                rooms__id__in=booked_rooms
+            ).distinct()
+
         return queryset
+
 
 class RoomViewSet(
     mixins.ListModelMixin,
@@ -121,7 +200,6 @@ class RoomViewSet(
 
         serializer.save(property=property)
 
-
     @action(detail=True, methods=['post'], url_path='images')
     def add_image(self, request, property_pk=None, pk=None):
         """
@@ -144,56 +222,95 @@ class RoomViewSet(
             RoomImageSerializer(room_image).data,
             status=HTTPStatus.CREATED
         )
-    
+
     @action(detail=True, methods=['get'], url_path='availability')
     def availability(self, request, property_pk=None, pk=None):
         """
         GET /properties/{property_id}/rooms/{room_id}/availability/
-        Ritorna le date occupate della stanza
+        Ritorna le date divise per stato:
+        - occupied_dates: prenotazioni di altri (pending o confirmed) → rosso
+        - pending_dates: mie prenotazioni in attesa → giallo
+        - my_dates: mie prenotazioni confermate → verde
         Parametri opzionali:
         - month: mese (1-12)
         - year: anno (es. 2026)
         """
         room = self.get_object()
 
+        # SCADENZA AUTOMATICA PENDING — approccio lazy
+        # Cancella automaticamente i pending più vecchi di 3 giorni
+        # senza bisogno di task schedulati esterni (es. Celery)
+        expiry_threshold = timezone.now() - timedelta(days=3)
+        expired = Booking.objects.filter(
+            room=room,
+            status='pending',
+            created_at__lt=expiry_threshold
+        )
+        if expired.exists():
+            print(f"Scadenza automatica: {expired.count()} prenotazioni pending cancellate per {room.name}")
+            expired.update(status='cancelled')
+
         # Leggiamo i parametri opzionali dall'URL
         # Es. /availability/?month=6&year=2026
         month = request.query_params.get('month')
         year = request.query_params.get('year')
 
+        # Identifichiamo l'utente loggato (può essere anonimo)
+        current_user = request.user if request.user.is_authenticated else None
+
         # Prendiamo tutte le prenotazioni attive della stanza
-        bookings = Booking.objects.filter(
+        all_bookings = Booking.objects.filter(
             room=room,
             status__in=['pending', 'confirmed']
         )
 
         # Se specificati filtriamo per mese e anno
         if month and year:
-            bookings = bookings.filter(
+            all_bookings = all_bookings.filter(
                 check_in__year=year,
                 check_in__month=month
-            ) | bookings.filter(
+            ) | all_bookings.filter(
                 check_out__year=year,
                 check_out__month=month
             )
 
-        # Generiamo la lista di tutte le date occupate
-        occupied_dates = []
-        for booking in bookings:
+        # Funzione helper per generare lista di date da una prenotazione
+        def get_dates(booking):
+            dates = []
             current_date = booking.check_in
-            # Iteriamo ogni giorno tra check_in e check_out
             while current_date < booking.check_out:
-                occupied_dates.append(current_date.strftime('%Y-%m-%d'))
-                from datetime import timedelta
+                dates.append(current_date.strftime('%Y-%m-%d'))
                 current_date += timedelta(days=1)
+            return dates
 
-        # Rimuoviamo duplicati e ordiniamo
-        occupied_dates = sorted(list(set(occupied_dates)))
+        occupied_dates = set()  # prenotazioni di altri (pending o confirmed) → rosso
+        pending_dates = set()   # mie prenotazioni in attesa → giallo
+        my_dates = set()        # mie prenotazioni confermate → verde
+
+        for booking in all_bookings:
+            dates = get_dates(booking)
+            is_mine = current_user and booking.guest == current_user
+
+            if is_mine and booking.status == 'confirmed':
+                # Mie prenotazioni confermate — verde
+                my_dates.update(dates)
+            elif is_mine and booking.status == 'pending':
+                # Mie prenotazioni in attesa di conferma — giallo
+                pending_dates.update(dates)
+            else:
+                # Prenotazioni di altri (pending o confirmed) — rosso
+                # Bloccano comunque la stanza indipendentemente dallo stato
+                occupied_dates.update(dates)
 
         return Response({
             "room_id": str(room.id),
             "room_name": room.name,
             "is_available": room.is_available,
-            "occupied_dates": occupied_dates,
-            "total_occupied_days": len(occupied_dates)
+            # Prenotazioni di altri → rosso
+            "occupied_dates": sorted(list(occupied_dates)),
+            # Mie prenotazioni in attesa → giallo
+            "pending_dates": sorted(list(pending_dates)),
+            # Mie prenotazioni confermate → verde
+            "my_dates": sorted(list(my_dates)),
+            "total_occupied_days": len(occupied_dates) + len(pending_dates)
         }, status=HTTPStatus.OK)

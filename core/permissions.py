@@ -11,15 +11,15 @@ class IsOwner(BasePermission):
 
 class IsHost(BasePermission):
     """
-    Permette l'accesso solo agli utenti con role == host
+    Permette l'accesso solo agli utenti con is_host == True
     """
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == "host"
+        return request.user.is_authenticated and request.user.is_host
 
 
 class IsGuest(BasePermission):
     """
-    Permette l'accesso solo agli utenti con role == guest
+    Permette l'accesso solo agli utenti con is_host == False
     """
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == "guest"
+        return request.user.is_authenticated and not request.user.is_host

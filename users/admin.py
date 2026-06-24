@@ -6,14 +6,14 @@ from .models import User, OTP
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
     # Colonne visibili nella lista utenti
-    list_display = ['username', 'email', 'role', 'is_active', 'created_at']
+    list_display = ['username', 'email', 'is_host', 'is_active', 'created_at']
     # Filtri nella sidebar destra
-    list_filter = ['role', 'is_active']
+    list_filter = ['is_active']
     # Campi ricercabili
     search_fields = ['username', 'email']
     # Aggiungiamo i nostri campi custom ai fieldsets di UserAdmin
     add_fieldsets = UserAdmin.add_fieldsets + (
-        (None, {'fields': ('email', 'role', 'profile_picture')}),
+        (None, {'fields': ('email' , 'is_host', 'profile_picture')}),
     )
 
 

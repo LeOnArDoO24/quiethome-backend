@@ -146,16 +146,15 @@ class UserModelView(
     def become_host(self, request):
         """
         POST /users/become-host/
-        Cambia il ruolo dell'utente autenticato da guest a host
+        Cambia is_host dell'utente autenticato a True
         """
         user = request.user
 
-        if user.role == 'host':
+        if user.is_host:
             raise ValidationError({"error": "Sei già un host"})
 
-        user.role = 'host'
-        # update_fields ottimizza la query — aggiorna solo il campo role
-        user.save(update_fields=['role'])
+        user.is_host = True
+        user.save(update_fields=['is_host'])
 
         return Response({
             "message": "Sei diventato host con successo",

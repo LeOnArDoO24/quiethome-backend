@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,10 +23,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-)!xmx$in(an!%n*5*9-6$@lv1u!3yb6k3*+k97y-$cpj$auri='
 
+GOOGLE_MAPS_API_KEY = 'AIzaSyAdyucjoOHnim2yrgqlIIuGLMEZEjoXD8c'
+
+
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = []
+
+
 
 
 # Application definition
@@ -138,8 +145,23 @@ REST_FRAMEWORK = {
     ]
 }
 #da togliere successivamente
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'leonardogesino@gmail.com'
+EMAIL_HOST_PASSWORD = 'cuee ybsw itpi kgyl'
+DEFAULT_FROM_EMAIL = 'QuietHome <leonardogesino@gmail.com>'
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # ← solo React può parlare con me
 ]
+
+#PER IMMAGINI
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+#acapone
+#pippoPeppo

@@ -26,15 +26,31 @@ class BookingViewSet(
 
     def get_queryset(self):
         user = self.request.user
+        # Parametro opzionale — se as_host=true mostra prenotazioni ricevute
+        # Default false — mostra sempre le prenotazioni fatte come guest
+        as_host = self.request.query_params.get('as_host', 'false')
 
-        # Se l'utente è host vede le prenotazioni delle sue stanze
-        if user.role == 'host':
+        # Swift non passa il parametro → vede prenotazioni fatte
+        # React passa as_host=true → vede prenotazioni ricevute come host
+        if as_host == 'true' and user.is_host:
             return Booking.objects.filter(room__property__host=user)
 
-        # Se l'utente è guest vede solo le sue prenotazioni
+        # Default — prenotazioni fatte dall'utente come guest
         return Booking.objects.filter(guest=user)
 
+    def create(self, request, *args, **kwargs):
+        print("BODY RICEVUTO:", request.data)
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            print("ERRORI:", serializer.errors)
+            return Response(serializer.errors, status=400)
+        self.perform_create(serializer)
+        # Usa BookingSerializer per la risposta completa
+        return Response(BookingSerializer(serializer.instance).data, status=201)
+
     def perform_create(self, serializer):
+        print("DATA RICEVUTA:", self.request.data)
+        print("ERRORI SERIALIZER:", serializer.errors if not serializer.is_valid() else "nessuno")
         # Verifichiamo che l'utente non prenoti una propria stanza
         room = serializer.validated_data.get('room')
         if room.property.host == self.request.user:
@@ -54,7 +70,6 @@ class BookingViewSet(
             [host.email],
             fail_silently=False,
         )
-
 
     @action(detail=True, methods=['patch'], url_path='confirm')
     def confirm(self, request, pk=None):
@@ -88,7 +103,6 @@ class BookingViewSet(
 
         return Response(BookingSerializer(booking).data, status=HTTPStatus.OK)
 
-
     @action(detail=True, methods=['patch'], url_path='cancel')
     def cancel(self, request, pk=None):
         """
@@ -113,13 +127,11 @@ class BookingViewSet(
 
         return Response(BookingSerializer(booking).data, status=HTTPStatus.OK)
 
-
     @action(detail=False, methods=['get'], url_path='my-bookings')
     def my_bookings(self, request):
         """
-        GET /bookings/my-bookings/
-        Ritorna le prenotazioni dell'utente autenticato
-        in base al suo ruolo
+        GET /bookings/my-bookings/              → prenotazioni fatte come guest
+        GET /bookings/my-bookings/?as_host=true → prenotazioni ricevute come host
         """
         bookings = self.get_queryset()
         serializer = BookingSerializer(bookings, many=True)

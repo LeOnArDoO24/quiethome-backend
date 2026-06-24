@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Property, Room, RoomImage, Amenity
+from .models import Property, PropertyImage, Room, RoomImage, Amenity
 
 
 class AmenitySerializer(serializers.ModelSerializer):
@@ -14,9 +14,14 @@ class RoomImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image"]
 
 
+class PropertyImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PropertyImage
+        fields = ["id", "image"]
+
+
 class RoomSerializer(serializers.ModelSerializer):
     # Mostriamo le immagini e le amenities direttamente nella stanza
-    # invece di mostrare solo gli id
     images = RoomImageSerializer(many=True, read_only=True)
     amenities = AmenitySerializer(many=True, read_only=True)
 
@@ -49,8 +54,9 @@ class RoomCreateSerializer(serializers.ModelSerializer):
 
 
 class PropertySerializer(serializers.ModelSerializer):
-    # Mostriamo le stanze direttamente dentro la property
+    # Mostriamo le stanze e le immagini direttamente dentro la property
     rooms = RoomSerializer(many=True, read_only=True)
+    images = PropertyImageSerializer(many=True, read_only=True)
     # Mostriamo il nome dell'host invece del solo id
     host_username = serializers.CharField(source="host.username", read_only=True)
 
@@ -59,14 +65,14 @@ class PropertySerializer(serializers.ModelSerializer):
         fields = [
             "id", "host_username", "name", "description",
             "address", "city", "country",
-            "latitude", "longitude", "rooms",
+            "latitude", "longitude", "images", "rooms",
             "created_at", "updated_at"
         ]
         read_only_fields = ["id", "host_username", "created_at", "updated_at"]
 
 
 class PropertyCreateSerializer(serializers.ModelSerializer):
-    # Serializer per la creazione — non include rooms (si aggiungono dopo)
+    # Serializer per la creazione — non include rooms e images (si aggiungono dopo)
     class Meta:
         model = Property
         fields = [

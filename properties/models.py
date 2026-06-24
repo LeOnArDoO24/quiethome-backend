@@ -37,6 +37,21 @@ class Property(BaseModel):
         verbose_name_plural = "Properties"
 
 
+class PropertyImage(BaseModel):
+    # Immagini della property — separato da Property per permettere più immagini
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="images")
+    image = models.FileField(
+        upload_to="properties/",
+        validators=[
+            FileExtensionValidator(['jpg', 'png', 'jpeg']),
+            validate_image_size
+        ]
+    )
+
+    def __str__(self):
+        return f"Image for {self.property.name}"
+
+
 class Room(BaseModel):
     ROOM_TYPE_CHOICES = [
         ('entire_place', 'Entire Place'),
