@@ -9,7 +9,9 @@ djangorestframework==3.17.1
 drf-nested-routers==0.95.0
 Faker==40.15.0
 googlemaps==4.10.0
+gunicorn==26.0.0
 idna==3.18
+packaging==26.2
 psycopg2-binary==2.9.12
 requests==2.34.2
 sqlparse==0.5.5
