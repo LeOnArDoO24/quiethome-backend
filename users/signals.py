@@ -24,5 +24,5 @@ def user_post_save(sender, instance, created, **kwargs):
             f"Scadrà il {local_expiry.strftime('%d/%m/%y alle %H:%M:%S')}",
             "noreply@vacanze.com",
             [instance.email],
-            fail_silently=False,
+            fail_silently=True,
         )
