@@ -27,19 +27,16 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         booking = data.get('booking')
         request = self.context.get('request')
 
-        # Verifichiamo che la prenotazione sia confermata
         if booking.status != 'confirmed':
             raise serializers.ValidationError({
                 "booking": "Puoi recensire solo prenotazioni confermate"
             })
 
-        # Verifichiamo che l'autore sia il guest della prenotazione
         if booking.guest != request.user:
             raise serializers.ValidationError({
                 "booking": "Non sei il guest di questa prenotazione"
             })
 
-        # Verifichiamo che non esista già una recensione per questa prenotazione
         if Review.objects.filter(booking=booking).exists():
             raise serializers.ValidationError({
                 "booking": "Hai già recensito questa prenotazione"
@@ -49,8 +46,6 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         booking = validated_data['booking']
-        # Prendiamo automaticamente la stanza dalla prenotazione
-        # e l'autore dall'utente autenticato
         return Review.objects.create(
             **validated_data,
             room=booking.room,
@@ -58,8 +53,20 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
         )
 
 
+class ReviewUpdateSerializer(serializers.ModelSerializer):
+    # Serializer per la modifica — solo rating e commento modificabili
+    # Non si può cambiare la prenotazione o la stanza
+    class Meta:
+        model = Review
+        fields = ["rating", "comment"]
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("Il rating deve essere tra 1 e 5")
+        return value
+
+
 class HostReviewSerializer(serializers.ModelSerializer):
-    # Mostriamo i dettagli completi in lettura
     author_details = UserViewSerializer(source='author', read_only=True)
     target_user_details = UserViewSerializer(source='target_user', read_only=True)
 
@@ -81,19 +88,16 @@ class HostReviewCreateSerializer(serializers.ModelSerializer):
         booking = data.get('booking')
         request = self.context.get('request')
 
-        # Verifichiamo che la prenotazione sia confermata
         if booking.status != 'confirmed':
             raise serializers.ValidationError({
                 "booking": "Puoi recensire solo prenotazioni confermate"
             })
 
-        # Verifichiamo che l'autore sia l'host della stanza prenotata
         if booking.room.property.host != request.user:
             raise serializers.ValidationError({
                 "booking": "Non sei l'host di questa prenotazione"
             })
 
-        # Verifichiamo che non esista già una recensione host per questa prenotazione
         if HostReview.objects.filter(booking=booking).exists():
             raise serializers.ValidationError({
                 "booking": "Hai già recensito questo guest"
@@ -103,7 +107,6 @@ class HostReviewCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         booking = validated_data['booking']
-        # Prendiamo automaticamente il guest dalla prenotazione
         return HostReview.objects.create(
             **validated_data,
             author=self.context['request'].user,

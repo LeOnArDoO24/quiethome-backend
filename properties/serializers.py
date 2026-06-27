@@ -59,6 +59,9 @@ class PropertySerializer(serializers.ModelSerializer):
     images = PropertyImageSerializer(many=True, read_only=True)
     # Mostriamo il nome dell'host invece del solo id
     host_username = serializers.CharField(source="host.username", read_only=True)
+    # Rating medio calcolato da tutte le recensioni delle stanze della property
+    # Restituisce None se non ci sono ancora recensioni
+    average_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Property
@@ -66,9 +69,22 @@ class PropertySerializer(serializers.ModelSerializer):
             "id", "host_username", "name", "description",
             "address", "city", "country",
             "latitude", "longitude", "images", "rooms",
+            "average_rating",
             "created_at", "updated_at"
         ]
         read_only_fields = ["id", "host_username", "created_at", "updated_at"]
+
+    def get_average_rating(self, obj):
+        # Recuperiamo tutte le recensioni delle stanze di questa property
+        # tramite la relazione room → reviews definita in reviews/models.py
+        from reviews.models import Review
+        reviews = Review.objects.filter(room__property=obj)
+        if not reviews.exists():
+            # Nessuna recensione — restituiamo None invece di 0
+            return None
+        # Calcoliamo la media e arrotondiamo a 1 decimale
+        total = sum(r.rating for r in reviews)
+        return round(total / reviews.count(), 1)
 
 
 class PropertyCreateSerializer(serializers.ModelSerializer):

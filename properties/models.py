@@ -29,6 +29,9 @@ class Property(BaseModel):
     # Coordinate geografiche opzionali per mappe future
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # Utenti che hanno salvato questa property nei preferiti
+    # ManyToMany — un utente può avere più preferiti, una property può essere preferita da più utenti
+    favorited_by = models.ManyToManyField(User, blank=True, related_name="favorite_properties")
 
     def __str__(self):
         return f"{self.name} - {self.city}"

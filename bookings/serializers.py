@@ -9,6 +9,9 @@ class BookingSerializer(serializers.ModelSerializer):
     # Mostriamo i dettagli completi della stanza e del guest in lettura
     room_details = RoomSerializer(source='room', read_only=True)
     guest_details = UserViewSerializer(source='guest', read_only=True)
+    # Campo calcolato — True se esiste già una recensione per questa prenotazione
+    # Permette all'app Swift di mostrare o nascondere il bottone "Lascia recensione"
+    has_review = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
@@ -16,9 +19,15 @@ class BookingSerializer(serializers.ModelSerializer):
             "id", "room_details", "guest_details",
             "check_in", "check_out", "num_guests",
             "total_price", "status", "notes",
-            "num_nights", "created_at", "updated_at"
+            "num_nights", "created_at", "updated_at",
+            "has_review"
         ]
         read_only_fields = ["id", "total_price", "status", "created_at", "updated_at"]
+
+    def get_has_review(self, obj):
+        # Sfruttiamo la relazione OneToOne definita in Review.booking
+        # hasattr restituisce True se esiste già una recensione collegata
+        return hasattr(obj, 'review')
 
 
 class BookingCreateSerializer(serializers.ModelSerializer):

@@ -5,7 +5,6 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from http import HTTPStatus
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
@@ -160,6 +159,44 @@ class PropertyViewSet(
 
         return queryset
 
+    @action(detail=False, methods=['get'], url_path='favorites')
+    def favorites(self, request):
+        """
+        GET /properties/favorites/
+        Ritorna tutte le properties nei preferiti dell'utente loggato
+        """
+        if not request.user.is_authenticated:
+            return Response({"error": "Autenticazione richiesta"}, status=HTTPStatus.UNAUTHORIZED)
+
+        # Recuperiamo le properties preferite dell'utente tramite il campo ManyToMany
+        properties = Property.objects.filter(
+            favorited_by=request.user
+        ).prefetch_related('rooms', 'rooms__images', 'images')
+
+        serializer = PropertySerializer(properties, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='favorite')
+    def toggle_favorite(self, request, pk=None):
+        """
+        POST /properties/{id}/favorite/
+        Aggiunge o rimuove la property dai preferiti dell'utente loggato
+        Risponde con is_favorite: true/false
+        """
+        if not request.user.is_authenticated:
+            return Response({"error": "Autenticazione richiesta"}, status=HTTPStatus.UNAUTHORIZED)
+
+        property = self.get_object()
+
+        if request.user in property.favorited_by.all():
+            # Era già nei preferiti — lo rimuoviamo
+            property.favorited_by.remove(request.user)
+            return Response({"is_favorite": False}, status=HTTPStatus.OK)
+        else:
+            # Non era nei preferiti — lo aggiungiamo
+            property.favorited_by.add(request.user)
+            return Response({"is_favorite": True}, status=HTTPStatus.OK)
+
 
 class RoomViewSet(
     mixins.ListModelMixin,
@@ -231,15 +268,11 @@ class RoomViewSet(
         - occupied_dates: prenotazioni di altri (pending o confirmed) → rosso
         - pending_dates: mie prenotazioni in attesa → giallo
         - my_dates: mie prenotazioni confermate → verde
-        Parametri opzionali:
-        - month: mese (1-12)
-        - year: anno (es. 2026)
         """
         room = self.get_object()
 
         # SCADENZA AUTOMATICA PENDING — approccio lazy
         # Cancella automaticamente i pending più vecchi di 3 giorni
-        # senza bisogno di task schedulati esterni (es. Celery)
         expiry_threshold = timezone.now() - timedelta(days=3)
         expired = Booking.objects.filter(
             room=room,
@@ -250,8 +283,6 @@ class RoomViewSet(
             print(f"Scadenza automatica: {expired.count()} prenotazioni pending cancellate per {room.name}")
             expired.update(status='cancelled')
 
-        # Leggiamo i parametri opzionali dall'URL
-        # Es. /availability/?month=6&year=2026
         month = request.query_params.get('month')
         year = request.query_params.get('year')
 
@@ -264,7 +295,6 @@ class RoomViewSet(
             status__in=['pending', 'confirmed']
         )
 
-        # Se specificati filtriamo per mese e anno
         if month and year:
             all_bookings = all_bookings.filter(
                 check_in__year=year,
@@ -274,7 +304,6 @@ class RoomViewSet(
                 check_out__month=month
             )
 
-        # Funzione helper per generare lista di date da una prenotazione
         def get_dates(booking):
             dates = []
             current_date = booking.check_in
@@ -283,7 +312,7 @@ class RoomViewSet(
                 current_date += timedelta(days=1)
             return dates
 
-        occupied_dates = set()  # prenotazioni di altri (pending o confirmed) → rosso
+        occupied_dates = set()  # prenotazioni di altri → rosso
         pending_dates = set()   # mie prenotazioni in attesa → giallo
         my_dates = set()        # mie prenotazioni confermate → verde
 
@@ -292,25 +321,18 @@ class RoomViewSet(
             is_mine = current_user and booking.guest == current_user
 
             if is_mine and booking.status == 'confirmed':
-                # Mie prenotazioni confermate — verde
                 my_dates.update(dates)
             elif is_mine and booking.status == 'pending':
-                # Mie prenotazioni in attesa di conferma — giallo
                 pending_dates.update(dates)
             else:
-                # Prenotazioni di altri (pending o confirmed) — rosso
-                # Bloccano comunque la stanza indipendentemente dallo stato
                 occupied_dates.update(dates)
 
         return Response({
             "room_id": str(room.id),
             "room_name": room.name,
             "is_available": room.is_available,
-            # Prenotazioni di altri → rosso
             "occupied_dates": sorted(list(occupied_dates)),
-            # Mie prenotazioni in attesa → giallo
             "pending_dates": sorted(list(pending_dates)),
-            # Mie prenotazioni confermate → verde
             "my_dates": sorted(list(my_dates)),
             "total_occupied_days": len(occupied_dates) + len(pending_dates)
         }, status=HTTPStatus.OK)
