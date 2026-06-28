@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from http import HTTPStatus
 from django.core.mail import send_mail
+from django.shortcuts import get_object_or_404
 
 from core.permissions import IsHost, IsGuest
 from .models import Booking
@@ -77,7 +78,10 @@ class BookingViewSet(
         PATCH /bookings/{id}/confirm/
         Solo l'host può confermare una prenotazione
         """
-        booking = self.get_object()
+        # Usiamo get_object_or_404 invece di self.get_object() perché
+        # get_object() chiama get_queryset() che filtra per guest —
+        # l'host non troverebbe mai la prenotazione e otterrebbe 404
+        booking = get_object_or_404(Booking, pk=pk)
 
         # Verifichiamo che l'utente sia l'host della stanza
         if booking.room.property.host != request.user:
@@ -109,7 +113,9 @@ class BookingViewSet(
         PATCH /bookings/{id}/cancel/
         Sia l'host che il guest possono cancellare
         """
-        booking = self.get_object()
+        # Stessa cosa — cerchiamo senza filtri di get_queryset
+        # per permettere sia all'host che al guest di trovare la prenotazione
+        booking = get_object_or_404(Booking, pk=pk)
 
         # Verifichiamo che l'utente sia l'host o il guest della prenotazione
         is_host = booking.room.property.host == request.user
