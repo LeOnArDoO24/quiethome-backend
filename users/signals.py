@@ -15,7 +15,8 @@ def user_post_save(sender, instance, created, **kwargs):
 
         otp = OTP.objects.create(user=instance)
 
-        # Convertiamo la scadenza in ora locale per l'email
+        #
+        # la scadenza in ora locale per l'email
         local_expiry = otp.expired_date.astimezone(LOCAL_TZ)
 
         send_mail(

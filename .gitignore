@@ -1,10 +1,14 @@
+# Secrets — mai committare
+.env
 
-venv/
-cat > .gitignore << 'EOF'
-venv/
+# Python
 __pycache__/
 *.pyc
+venv/
+env/
+*.egg-info/
+
+# Django
 db.sqlite3
-.env
 media/
-*.log
+staticfiles/

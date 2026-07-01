@@ -69,7 +69,7 @@ class BookingViewSet(
             f"dal {booking.check_in} al {booking.check_out}.",
             "noreply@vacanze.com",
             [host.email],
-            fail_silently=False,
+            fail_silently=True,
         )
 
     @action(detail=True, methods=['patch'], url_path='confirm')
@@ -102,7 +102,7 @@ class BookingViewSet(
             f"è stata confermata!",
             "noreply@vacanze.com",
             [booking.guest.email],
-            fail_silently=False,
+            fail_silently=True,
         )
 
         return Response(BookingSerializer(booking).data, status=HTTPStatus.OK)

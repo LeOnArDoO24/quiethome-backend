@@ -11,7 +11,7 @@ from datetime import timedelta
 from bookings.models import Booking
 import googlemaps
 
-from core.permissions import IsHost, IsOwner
+from core.permissions import IsHost, IsPropertyOwner
 from .models import Property, Room, RoomImage, Amenity
 from .serializers import ( PropertySerializer, PropertyCreateSerializer, RoomSerializer, RoomCreateSerializer, AmenitySerializer, RoomImageSerializer )
 
@@ -61,9 +61,11 @@ class PropertyViewSet(
         # Solo gli host possono creare properties
         if self.action == 'create':
             return [drf_permissions.IsAuthenticated(), IsHost()]
-        # Solo l'host proprietario può modificare o cancellare
+        # FIX: solo l'host PROPRIETARIO può modificare o cancellare —
+        # prima IsHost() bastava a qualsiasi host, non solo al proprietario.
+        # IsPropertyOwner fa il controllo object-level (obj.host == request.user).
         if self.action in ['update', 'partial_update', 'destroy']:
-            return [drf_permissions.IsAuthenticated(), IsHost()]
+            return [drf_permissions.IsAuthenticated(), IsHost(), IsPropertyOwner()]
         return [drf_permissions.IsAuthenticated()]
 
     def perform_create(self, serializer):
@@ -90,14 +92,11 @@ class PropertyViewSet(
                 location = result[0]['geometry']['location']
                 latitude = location['lat']
                 longitude = location['lng']
-                print(f"Geocoding riuscito: {full_address} → {latitude}, {longitude}")
-            else:
-                # Nessun risultato trovato — salviamo senza coordinate
-                print(f"Geocoding: nessun risultato per {full_address}")
-        except Exception as e:
+            # Se result è vuoto, salviamo senza coordinate
+        except Exception:
             # Se il geocoding fallisce per qualsiasi motivo (es. chiave non valida,
             # rete assente) salviamo comunque la property senza coordinate
-            print(f"Geocoding error: {e}")
+            pass
 
         # Associamo automaticamente l'host alla property e salviamo le coordinate
         serializer.save(
@@ -112,6 +111,12 @@ class PropertyViewSet(
             'rooms__images',
             'rooms__amenities'
         ).select_related('host')
+
+        # Filtro per host — GET /properties/?as_host=true
+        # Mostra solo le properties dell'utente loggato (per la dashboard React)
+        as_host = self.request.query_params.get('as_host')
+        if as_host == 'true' and self.request.user.is_authenticated:
+            queryset = queryset.filter(host=self.request.user)
 
         # Filtro per città — GET /properties/?city=Roma
         city = self.request.query_params.get('city')
@@ -217,7 +222,13 @@ class RoomViewSet(
         # Chiunque può vedere le stanze e la disponibilità
         if self.action in ['list', 'retrieve', 'availability']:
             return [drf_permissions.AllowAny()]
-        # Solo gli host possono gestire le stanze
+        # FIX: update/partial_update/destroy richiedono anche di essere il
+        # proprietario della property a cui appartiene la stanza (IsPropertyOwner
+        # risale con obj.property.host). "create" resta solo IsHost perché lì
+        # l'oggetto non esiste ancora — l'ownership è già verificata a mano
+        # dentro perform_create.
+        if self.action in ['update', 'partial_update', 'destroy']:
+            return [drf_permissions.IsAuthenticated(), IsHost(), IsPropertyOwner()]
         return [drf_permissions.IsAuthenticated(), IsHost()]
 
     def get_queryset(self):
@@ -280,7 +291,6 @@ class RoomViewSet(
             created_at__lt=expiry_threshold
         )
         if expired.exists():
-            print(f"Scadenza automatica: {expired.count()} prenotazioni pending cancellate per {room.name}")
             expired.update(status='cancelled')
 
         month = request.query_params.get('month')

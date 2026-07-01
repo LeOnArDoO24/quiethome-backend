@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+from decouple import config
 import dj_database_url
 import os
 
@@ -23,18 +24,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-)!xmx$in(an!%n*5*9-6$@lv1u!3yb6k3*+k97y-$cpj$auri='
+# Il valore vero vive nel file .env (mai committato). Vedi .env.example.
+SECRET_KEY = config('SECRET_KEY')
 
-GOOGLE_MAPS_API_KEY = 'AIzaSyAdyucjoOHnim2yrgqlIIuGLMEZEjoXD8c'
-
+GOOGLE_MAPS_API_KEY = config('GOOGLE_MAPS_API_KEY')
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
-
+# In produzione (Railway) imposta la env var DEBUG=False nel pannello del progetto.
+DEBUG = config('DEBUG', default=False, cast=bool)
 
 
 # Application definition
@@ -147,38 +145,31 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ]
 }
-#da togliere successivamente
-
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'leonardogesino@gmail.com'
-EMAIL_HOST_PASSWORD = 'cuee ybsw itpi kgyl'
-DEFAULT_FROM_EMAIL = 'QuietHome <leonardogesino@gmail.com>'
+EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = f'QuietHome <{EMAIL_HOST_USER}>'
 
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',  # ← solo React può parlare con me
+    'http://localhost:5173',  # ← solo React
 ]
-
-#PER IMMAGINI
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-#acapone
-#pippoPeppo
-
-#collegamento con database esterno
-
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# Collegamento al database esterno (Postgres su Railway).
+# In locale, senza DATABASE_URL nell'ambiente, resta sqlite (definito sopra).
+DATABASE_URL = config('DATABASE_URL', default='')
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL)
     }
 
-#devo hardcodare un url per poter usare il db di railways
-
+# Host consentiti: locale + dominio Railway.
+# Se serve un dominio diverso in futuro, aggiungilo qui (unico punto, non duplicare).
 ALLOWED_HOSTS = ['quiethome-backend-production.up.railway.app', 'localhost', '127.0.0.1']
 
 #config deploy

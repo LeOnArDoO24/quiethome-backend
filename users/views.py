@@ -97,25 +97,32 @@ class UserModelView(
     def resend_otp(self, request):
         """
         POST /users/resend-otp/
-        Body: { "user": "uuid-utente" }
-        Cancella il vecchio OTP e ne genera uno nuovo
+        Body: { "email": "utente@email.com" }
+        Cancella il vecchio OTP e ne genera uno nuovo.
+
+        FIX SICUREZZA: prima richiedeva uno "user" id diretto e rispondeva in modo
+        diverso a seconda che l'utente esistesse, fosse già attivo, ecc. — questo
+        permetteva enumeration (scoprire quali id/utenti esistono) e spam OTP
+        illimitato senza autenticazione.
+        Ora, come forgot_password, risponde SEMPRE con lo stesso messaggio generico
+        e usa l'email invece dell'id, così non si può indovinare un id valido.
         """
-        user_id = request.data.get("user")
+        email = request.data.get("email")
 
-        if not user_id:
-            raise ValidationError({"error": "L'id utente è obbligatorio"})
+        generic_response = Response(
+            {"message": "Se l'account esiste e non è ancora attivo, riceverai un nuovo codice"},
+            status=HTTPStatus.OK
+        )
 
-        # Gestiamo il caso in cui l'id non sia un UUID valido
-        try:
-            user = User.objects.filter(id=user_id).first()
-        except (DjangoValidationError, ValueError):
-            raise ValidationError({"error": "Utente non trovato"})
+        if not email:
+            raise ValidationError({"error": "L'email è obbligatoria"})
 
-        if not user:
-            raise ValidationError({"error": "Utente non trovato"})
+        user = User.objects.filter(email=email).first()
 
-        if user.is_active:
-            raise ValidationError({"error": "L'utente è già attivo"})
+        # Nessuna distinzione di risposta se l'utente non esiste o è già attivo:
+        # in entrambi i casi rispondiamo allo stesso modo, senza inviare nulla.
+        if not user or user.is_active:
+            return generic_response
 
         # Cancelliamo il vecchio OTP se esiste
         OTP.objects.filter(user=user).delete()
@@ -127,12 +134,12 @@ class UserModelView(
             "Nuovo OTP Code",
             f"Ciao {user.username}, ecco il tuo nuovo OTP: {otp.code}. "
             f"Scadrà il {otp.expired_date.strftime('%d/%m/%y alle %H:%M:%S')}",
-            "noreply@vacanze.com",
+            None,  # usa DEFAULT_FROM_EMAIL da settings.py
             [user.email],
-            fail_silently=False,
+            fail_silently=True,
         )
 
-        return Response({"message": "Nuovo OTP inviato"}, status=HTTPStatus.OK)
+        return generic_response
 
     @action(detail=False, methods=['post'], url_path='become-host')
     def become_host(self, request):
@@ -182,7 +189,7 @@ class UserModelView(
             f"Ciao {user.username}, hai richiesto il recupero della password.\n\n"
             f"Il tuo codice è: {otp.code}\n\n"
             f"Scadrà tra 15 minuti. Se non hai richiesto il recupero, ignora questa email.",
-            "noreply@quiethome.com",
+            None,  # usa DEFAULT_FROM_EMAIL da settings.py
             [user.email],
             fail_silently=True,
         )
